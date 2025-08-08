@@ -1,2 +1,2 @@
 # Example links.txt://instagram.com/yourhandle Img:https://drive.google.com/file/d/1ojwLZtP3ofvchsTH5vvhiiYHimh_Zojl/view?usp=sharing
-Post.no:01 Title:Spicy Post  Link:https://tpi.li/0000000001 Img:https://drive.google.com/file/d/1Zb81miWVNEk4m-two6x6_YUhany_xPXn/view?usp=sharing
+Post.no:01 Title:Spicy Post  Link:https://tpi.li/0000000001 Img: https://drive.google.com/file/d/1Zb81miWVNEk4m-two6x6_YUhany_xPXn/view?usp=sharing
