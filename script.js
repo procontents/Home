@@ -19,7 +19,13 @@
       .trim();
   }
 
-  // --- Google Drive helpers ---
+  // New stable key (v2): URL only (or title if no URL), to avoid random mixes when ids/order change
+  const CLICKS_PREFIX = 'pv2:clicks:';
+  function clickKeyForPost(post) {
+    const anchor = post.url || post.title || '';
+    return CLICKS_PREFIX + normalizeString(anchor);
+  }
+
   function extractDriveFileId(url) {
     try {
       const u = new URL(url);
@@ -137,17 +143,14 @@
     return parseLinksTxt(linksText);
   }
 
-  function getClickCount(postId) {
-    const key = `clicks:${postId}`;
-    const value = localStorage.getItem(key);
+  function getClickCountByKey(storageKey) {
+    const value = localStorage.getItem(storageKey);
     return value ? Number(value) : 0;
   }
 
-  function incrementClickCount(postId) {
-    const key = `clicks:${postId}`;
-    const current = getClickCount(postId);
-    const next = current + 1;
-    localStorage.setItem(key, String(next));
+  function incrementClickCountByKey(storageKey) {
+    const next = getClickCountByKey(storageKey) + 1;
+    localStorage.setItem(storageKey, String(next));
     return next;
   }
 
@@ -166,6 +169,19 @@
     try { window.open(url, '_blank', 'noopener'); } catch (_) {}
   }
 
+  function formatClicks(n) {
+    return `${n} ${n === 1 ? 'click' : 'clicks'}`;
+  }
+
+  const lastIncrementAt = new Map();
+  function maybeIncrementByKey(storageKey) {
+    const now = Date.now();
+    const last = lastIncrementAt.get(storageKey) || 0;
+    if (now - last < 1500) return null;
+    lastIncrementAt.set(storageKey, now);
+    return incrementClickCountByKey(storageKey);
+  }
+
   function createPostItem(post, index) {
     const listItem = document.createElement('li');
     listItem.className = 'post-item';
@@ -176,7 +192,9 @@
     rank.className = 'post-rank';
     const displayedRank = post.id != null && !Number.isNaN(Number(post.id)) ? Number(post.id) : index + 1;
 
+    // Prepare icon with Drive fallbacks
     let iconSrc = post.thumbnail ? normalizeDriveThumbnail(post.thumbnail) : providerIconForUrl(post.url);
+    const driveIdForAlt = post.thumbnail ? extractDriveFileId(post.thumbnail) : null;
     if (iconSrc) {
       const providerIcon = document.createElement('img');
       providerIcon.className = 'rank-icon';
@@ -185,7 +203,15 @@
       providerIcon.referrerPolicy = 'no-referrer';
       providerIcon.decoding = 'async';
       providerIcon.loading = 'eager';
+      if (driveIdForAlt) providerIcon.dataset.driveId = driveIdForAlt;
       providerIcon.onerror = () => {
+        // Try lh3.googleusercontent.com as a second fallback for Drive images
+        const id = providerIcon.dataset.driveId;
+        if (id && !providerIcon.dataset.lhTried) {
+          providerIcon.dataset.lhTried = '1';
+          providerIcon.src = `https://lh3.googleusercontent.com/d/${id}=s64`;
+          return;
+        }
         const fallback = providerIconForUrl(post.url);
         if (fallback && providerIcon.src !== fallback) {
           providerIcon.onerror = null;
@@ -212,8 +238,9 @@
 
     const clicks = document.createElement('div');
     clicks.className = 'post-url';
-    const postKey = post.id ?? post.title ?? index;
-    clicks.textContent = `${getClickCount(postKey)} clicks`;
+
+    const clicksKey = clickKeyForPost(post);
+    clicks.textContent = formatClicks(getClickCountByKey(clicksKey));
 
     const openLink = document.createElement('a');
     openLink.href = post.url || '#';
@@ -223,11 +250,13 @@
     openLink.textContent = 'Open';
     openLink.addEventListener('click', (e) => {
       e.stopPropagation();
-      const updated = incrementClickCount(postKey);
-      clicks.textContent = `${updated} clicks`;
+      const updated = maybeIncrementByKey(clicksKey);
+      if (updated != null) clicks.textContent = formatClicks(updated);
     });
 
-    listItem.addEventListener('click', () => openInNewTab(post.url));
+    listItem.addEventListener('click', () => {
+      openInNewTab(post.url);
+    });
     listItem.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
@@ -261,13 +290,13 @@
     const filtered = !normalizedQuery
       ? sorted
       : sorted.filter((p, i) => {
-          const idString = String(p.id != null ? p.id : i + 1);
-          return (
-            normalizeString(p.title).includes(normalizedQuery) ||
-            normalizeString(p.url).includes(normalizedQuery) ||
-            normalizeString(idString).includes(normalizedQuery)
-          );
-        });
+        const idString = String(p.id != null ? p.id : i + 1);
+        return (
+          normalizeString(p.title).includes(normalizedQuery) ||
+          normalizeString(p.url).includes(normalizedQuery) ||
+          normalizeString(idString).includes(normalizedQuery)
+        );
+      });
 
     if (filtered.length === 0) {
       emptyStateElement.hidden = false;
